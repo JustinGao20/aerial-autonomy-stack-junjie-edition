@@ -86,6 +86,7 @@ if [[ "$DEV" == "true" ]]; then
   DEV_AIR_OPTS+=" -v ${SCRIPT_DIR}/../aircraft/aircraft_resources/:/aas/aircraft_resources:cached"
   DEV_AIR_OPTS+=" -v ${SCRIPT_DIR}/../aircraft/aircraft_ws/src:/aas/aircraft_ws/src:cached"
   DEV_AIR_OPTS+=" -v ${SCRIPT_DIR}/../ground/ground_ws/src/ground_system_msgs:/aas/aircraft_ws/src/ground_system_msgs:cached"
+  DEV_AIR_OPTS+=" -v /home/sim/Scene-Aware-UAV-Nevigation-clone/SoftwareArch:/workspace/SoftwareArch:cached"
 fi
 
 # Create docker networks for SITL
