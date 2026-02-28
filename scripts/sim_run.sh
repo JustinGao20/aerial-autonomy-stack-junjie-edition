@@ -19,6 +19,7 @@ NUM_VTOLS="${NUM_VTOLS:-0}" # Number of VTOLs (default = 0)
 WORLD="${WORLD:-impalpable_greyness}" # Options: impalpable_greyness (default), apple_orchard, shibuya_crossing, swiss_town
 #
 DEV="${DEV:-false}" # Options: true, false (default)
+DEV_SHELL_ENTRYPOINT="${DEV_SHELL_ENTRYPOINT:-false}" # Options: true, false (default). true => override entrypoint with /bin/bash
 HITL="${HITL:-false}" # Options: true, false (default)
 GND_CONTAINER="${GND_CONTAINER:-true}" # Options: true (default), false
 RTF="${RTF:-1.0}" # Real-time factor (default = 1.0), set to <=0.0 for as fast as possible execution
@@ -63,7 +64,7 @@ if [[ "$USE_X11" == "false" ]]; then
   HEADLESS="true"
 fi
 
-if [[ "$USE_X11" == "true" ]] && command -v xterm >/dev/null 2>&1; then
+if [[ "$USE_X11" == "true" ]] && command -v xterm >/dev/null 2>&1 && [[ -t 0 ]] && [[ -t 1 ]]; then
   LAUNCH_MODE="xterm"
   DOCKER_RUN_FLAGS="-it --rm"
 else
@@ -74,19 +75,60 @@ fi
 # In dev mode, resources and workspaces are mounted from the host
 if [[ "$DEV" == "true" ]]; then
   SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+  DEV_SIM_OPTS=""
+  DEV_GND_OPTS=""
+  DEV_AIR_OPTS=""
+
+  if [[ "$DEV_SHELL_ENTRYPOINT" == "true" ]]; then
+    DEV_SIM_OPTS+=" --entrypoint /bin/bash"
+    DEV_GND_OPTS+=" --entrypoint /bin/bash"
+    DEV_AIR_OPTS+=" --entrypoint /bin/bash"
+  fi
+
   #
-  DEV_SIM_OPTS="--entrypoint /bin/bash"
   DEV_SIM_OPTS+=" -v ${SCRIPT_DIR}/../simulation/simulation_resources/:/aas/simulation_resources:cached"
+  DEV_SIM_OPTS+=" -v ${SCRIPT_DIR}/../simulation/simulation.yml.erb:/aas/simulation.yml.erb:cached"
   #
-  DEV_GND_OPTS="--entrypoint /bin/bash"
   DEV_GND_OPTS+=" -v ${SCRIPT_DIR}/../ground/ground_resources/:/aas/ground_resources:cached"
   DEV_GND_OPTS+=" -v ${SCRIPT_DIR}/../ground/ground_ws/src:/aas/ground_ws/src:cached"
   #
-  DEV_AIR_OPTS="--entrypoint /bin/bash"
   DEV_AIR_OPTS+=" -v ${SCRIPT_DIR}/../aircraft/aircraft_resources/:/aas/aircraft_resources:cached"
   DEV_AIR_OPTS+=" -v ${SCRIPT_DIR}/../aircraft/aircraft_ws/src:/aas/aircraft_ws/src:cached"
   DEV_AIR_OPTS+=" -v ${SCRIPT_DIR}/../ground/ground_ws/src/ground_system_msgs:/aas/aircraft_ws/src/ground_system_msgs:cached"
-  DEV_AIR_OPTS+=" -v /home/sim/Scene-Aware-UAV-Nevigation-clone/SoftwareArch:/workspace/SoftwareArch:cached"
+
+  SELECTED_SOFTWAREARCH_PATH=""
+  if [[ -n "$SOFTWAREARCH_HOST_PATH" ]]; then
+    if [[ -d "$SOFTWAREARCH_HOST_PATH/src" ]]; then
+      SELECTED_SOFTWAREARCH_PATH="$SOFTWAREARCH_HOST_PATH"
+    else
+      echo "Warning: SOFTWAREARCH_HOST_PATH set but no src/ found (${SOFTWAREARCH_HOST_PATH})"
+    fi
+  else
+    REPO_ROOT=$(cd "${SCRIPT_DIR}/../.." && pwd)
+    CANDIDATE_SOFTWAREARCH_PATHS=(
+      "${REPO_ROOT}/SoftwareArch"
+      "${REPO_ROOT}-clone/SoftwareArch"
+      "/home/sim/Scene-Aware-UAV-Nevigation/SoftwareArch"
+      "/home/sim/Scene-Aware-UAV-Nevigation-clone/SoftwareArch"
+    )
+    for candidate in "${CANDIDATE_SOFTWAREARCH_PATHS[@]}"; do
+      if [[ -d "$candidate/src" ]]; then
+        SELECTED_SOFTWAREARCH_PATH="$candidate"
+        break
+      fi
+    done
+  fi
+
+  if [[ -n "$SELECTED_SOFTWAREARCH_PATH" ]]; then
+    DEV_AIR_OPTS+=" -v ${SELECTED_SOFTWAREARCH_PATH}:/aas/SoftwareArch:cached"
+    echo "DEV mount: ${SELECTED_SOFTWAREARCH_PATH} -> /aas/SoftwareArch"
+    if [[ -d "${SELECTED_SOFTWAREARCH_PATH}/src/offboard_eval_tools" ]]; then
+      DEV_AIR_OPTS+=" -v ${SELECTED_SOFTWAREARCH_PATH}/src/offboard_eval_tools:/aas/aircraft_ws/src/offboard_eval_tools:cached"
+      echo "DEV mount: ${SELECTED_SOFTWAREARCH_PATH}/src/offboard_eval_tools -> /aas/aircraft_ws/src/offboard_eval_tools"
+    fi
+  else
+    echo "Warning: no valid SoftwareArch path with src/ found; skipping /aas/SoftwareArch mount"
+  fi
 fi
 
 # Create docker networks for SITL
@@ -259,8 +301,13 @@ if [[ "$HITL" == "false" ]]; then
 fi
 
 echo "Fly, my pretties, fly!"
-echo "Press any key to stop all containers and close the terminals..."
-read -n 1 -s # Wait for user input
+if [[ -r /dev/tty ]]; then
+  echo "Press any key to stop all containers and close the terminals..."
+  read -n 1 -s < /dev/tty # Wait for user input from terminal device
+else
+  echo "No interactive TTY detected; waiting for ${SIM_CONT_NAME} to exit."
+  docker wait "$SIM_CONT_NAME" >/dev/null 2>&1 || true
+fi
 
 # Cleanup function
 cleanup() {

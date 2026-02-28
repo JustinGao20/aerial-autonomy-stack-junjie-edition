@@ -40,12 +40,13 @@ class YoloInferenceNode(Node):
         if self.architecture == 'x86_64':
             model_path = "/aas/yolo/yolo26n_320.onnx" # Simulated camera in sensor_camera/model.sdf is 320x240
             self.input_size = 320 # YOLO input size
-            print("Loading CUDAExecutionProvider on AMD64 (x86) architecture.")
-            self.session = ort.InferenceSession(model_path, providers=["CUDAExecutionProvider"]) # For simulation
+            preferred_providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
+            self.get_logger().info("Trying ONNX Runtime providers for AMD64: CUDA -> CPU fallback")
+            self.session = self.create_ort_session(model_path, preferred_providers)
         elif self.architecture == 'aarch64':
             model_path = "/aas/yolo/yolo26n_640.onnx" # Real CSI camera IMX219-200 is 1280x720, we resize to 640x640 for YOLO (this is slightly wasteful when self.hitl = True)
             self.input_size = 640 # YOLO input size
-            print("Loading (with cache) TensorrtExecutionProvider on ARM64 architecture (Jetson).") # The first cache built takes ~10'
+            self.get_logger().info("Trying ONNX Runtime providers for ARM64: TensorRT -> CUDA -> CPU fallback")
             cache_path = "/tensorrt_cache" # Mounted as volume by main_deploy.sh
             os.makedirs(cache_path, exist_ok=True)
             provider_options = {
@@ -53,13 +54,17 @@ class YoloInferenceNode(Node):
                 'trt_engine_cache_path': cache_path,
                 'trt_fp16_enable': True, # Optional: enable FP16 for Jetson speedup (from 22 to 12ms on YOLOn, longer cache build time, 10 vs 3')
             }
-            self.session = ort.InferenceSession(
-                model_path,
-                providers=[('TensorrtExecutionProvider', provider_options)] # For deployment on Jetson Orin, 60Hz inference on the IMX219-200
-            )
+            preferred_providers = [
+                ('TensorrtExecutionProvider', provider_options),
+                'CUDAExecutionProvider',
+                'CPUExecutionProvider',
+            ]
+            self.session = self.create_ort_session(model_path, preferred_providers)
         else:
-            print(f"Loading CPUExecutionProvider on an unknown architecture: {self.architecture}")
-            self.session = ort.InferenceSession(model_path, providers=["CPUExecutionProvider"]) # Backup, not recommended
+            model_path = "/aas/yolo/yolo26n_320.onnx"
+            self.input_size = 320
+            self.get_logger().warning(f"Unknown architecture {self.architecture}, using CPUExecutionProvider")
+            self.session = self.create_ort_session(model_path, ["CPUExecutionProvider"])
         self.input_name = self.session.get_inputs()[0].name
         
         # Confirm execution providers
@@ -74,6 +79,30 @@ class YoloInferenceNode(Node):
         self.scale_factors = np.zeros(4, dtype=np.float32)
         
         self.get_logger().info("YOLO inference started.")
+
+    def create_ort_session(self, model_path, preferred_providers):
+        available = ort.get_available_providers()
+        self.get_logger().info(f"ONNX Runtime available providers: {available}")
+
+        selected = []
+        for provider in preferred_providers:
+            if isinstance(provider, tuple):
+                provider_name = provider[0]
+            else:
+                provider_name = provider
+            if provider_name in available:
+                selected.append(provider)
+
+        if "CPUExecutionProvider" not in [p[0] if isinstance(p, tuple) else p for p in selected]:
+            selected.append("CPUExecutionProvider")
+
+        try:
+            return ort.InferenceSession(model_path, providers=selected)
+        except Exception as exc:
+            self.get_logger().warning(
+                f"Failed creating ORT session with providers {selected}: {exc}. Falling back to CPUExecutionProvider"
+            )
+            return ort.InferenceSession(model_path, providers=["CPUExecutionProvider"])
 
     def run_inference_loop(self):
         # Acquire video stream

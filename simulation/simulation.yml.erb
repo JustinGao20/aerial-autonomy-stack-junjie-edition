@@ -112,6 +112,13 @@ windows:
   <% end %>
         <% if camera %>
         - >
+          if [ ! -x /aas/simulation_resources/comms/gz_gst_bridge/build/gz_gst_bridge ]; then
+            mkdir -p /aas/simulation_resources/comms/gz_gst_bridge/build &&
+            cd /aas/simulation_resources/comms/gz_gst_bridge/build &&
+            cmake .. -DCMAKE_BUILD_TYPE=Release &&
+            make -j$(nproc) &&
+            cd /aas;
+          fi &&
           /aas/simulation_resources/comms/gz_gst_bridge/build/gz_gst_bridge
           /world/<%= world %>/model/<%= model_name %>/<%= sensor_path %>model/simple_camera/link/mono_cam/base_link/sensor/imager/image
           <%= "#{sim_subnet}.90.#{drone_id}" %> 5600 8
