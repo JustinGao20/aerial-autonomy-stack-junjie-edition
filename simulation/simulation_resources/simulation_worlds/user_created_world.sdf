@@ -1,0 +1,1034 @@
+<?xml version="1.0" ?>
+<!--
+  High-Precision Gazebo Sim World for aerial-autonomy-stack
+  Designed for PX4/ArduPilot SITL with ROS 2
+  Features: realistic physics, GPS coordinates, terrain, obstacles,
+            buildings, landing pads, wind, and lighting for UAV testing.
+  
+  Usage:
+    Place in simulation_worlds/ or ~/.simulation-gazebo/worlds/
+    Launch: gz sim aerial_autonomy_world.sdf
+    Or via aerial-autonomy-stack scripts with WORLD= parameter
+-->
+<sdf version="1.9">
+  <world name="aerial_autonomy_world">
+
+    <!-- ================================================================== -->
+    <!-- PHYSICS ENGINE — 1ms step for high-precision dynamics              -->
+    <!-- ================================================================== -->
+    <physics name="1ms" type="ode">
+      <max_step_size>0.001</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>1000</real_time_update_rate>
+      <ode>
+        <solver>
+          <type>world</type>
+          <iters>50</iters>
+          <sor>1.3</sor>
+          <use_dynamic_moi_rescaling>true</use_dynamic_moi_rescaling>
+        </solver>
+        <constraints>
+          <cfm>0.0</cfm>
+          <erp>0.2</erp>
+          <contact_max_correcting_vel>100.0</contact_max_correcting_vel>
+          <contact_surface_layer>0.001</contact_surface_layer>
+        </constraints>
+      </ode>
+    </physics>
+
+    <!-- ================================================================== -->
+    <!-- REQUIRED SYSTEM PLUGINS                                            -->
+    <!-- ================================================================== -->
+    <plugin filename="gz-sim-physics-system"
+            name="gz::sim::systems::Physics">
+    </plugin>
+    <plugin filename="gz-sim-user-commands-system"
+            name="gz::sim::systems::UserCommands">
+    </plugin>
+    <plugin filename="gz-sim-scene-broadcaster-system"
+            name="gz::sim::systems::SceneBroadcaster">
+    </plugin>
+    <plugin filename="gz-sim-contact-system"
+            name="gz::sim::systems::Contact">
+    </plugin>
+    <plugin filename="gz-sim-imu-system"
+            name="gz::sim::systems::Imu">
+    </plugin>
+    <plugin filename="gz-sim-air-pressure-system"
+            name="gz::sim::systems::AirPressure">
+    </plugin>
+    <plugin filename="gz-sim-sensors-system"
+            name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
+    <plugin filename="gz-sim-navsat-system"
+            name="gz::sim::systems::NavSat">
+    </plugin>
+
+    <!-- ================================================================== -->
+    <!-- WIND                                                               -->
+    <!-- Moderate NE wind for realistic flight disturbance testing          -->
+    <!-- ================================================================== -->
+    <wind>
+      <linear_velocity>2.5 1.5 0</linear_velocity>
+    </wind>
+
+    <!-- ================================================================== -->
+    <!-- ATMOSPHERE                                                         -->
+    <!-- ISA standard atmosphere at ~100m AMSL                              -->
+    <!-- ================================================================== -->
+    <atmosphere type="adiabatic">
+      <temperature>288.15</temperature>
+      <pressure>101325</pressure>
+      <temperature_gradient>-0.0065</temperature_gradient>
+    </atmosphere>
+
+    <!-- ================================================================== -->
+    <!-- GPS / SPHERICAL COORDINATES                                        -->
+    <!-- Set to a realistic location (Ottawa, Canada — near aerial-         -->
+    <!-- autonomy-stack origin). Adjust for your deployment region.         -->
+    <!-- ================================================================== -->
+    <spherical_coordinates>
+      <surface_model>EARTH_WGS84</surface_model>
+      <world_frame_orientation>ENU</world_frame_orientation>
+      <latitude_deg>45.4215</latitude_deg>
+      <longitude_deg>-75.6972</longitude_deg>
+      <elevation>70.0</elevation>
+      <heading_deg>0</heading_deg>
+    </spherical_coordinates>
+
+    <!-- ================================================================== -->
+    <!-- GRAVITY                                                            -->
+    <!-- ================================================================== -->
+    <gravity>0 0 -9.80665</gravity>
+    <magnetic_field>1.9e-05 2.07e-05 -4.78e-05</magnetic_field>
+
+    <!-- ================================================================== -->
+    <!-- SCENE & LIGHTING                                                   -->
+    <!-- ================================================================== -->
+    <scene>
+      <ambient>0.6 0.6 0.6 1.0</ambient>
+      <background>0.4 0.65 0.95 1.0</background>
+      <shadows>true</shadows>
+      <grid>false</grid>
+    </scene>
+
+    <!-- Sun — directional light simulating mid-morning illumination -->
+    <light type="directional" name="sun">
+      <cast_shadows>true</cast_shadows>
+      <pose>0 0 100 0 0 0</pose>
+      <diffuse>0.95 0.92 0.85 1.0</diffuse>
+      <specular>0.3 0.3 0.3 1.0</specular>
+      <attenuation>
+        <range>1000</range>
+        <constant>0.9</constant>
+        <linear>0.001</linear>
+        <quadratic>0.0001</quadratic>
+      </attenuation>
+      <direction>-0.5 0.3 -0.9</direction>
+    </light>
+
+    <!-- Fill light — softer, from opposite side to reduce hard shadows -->
+    <light type="directional" name="fill_light">
+      <cast_shadows>false</cast_shadows>
+      <pose>0 0 80 0 0 0</pose>
+      <diffuse>0.3 0.35 0.45 1.0</diffuse>
+      <specular>0.05 0.05 0.05 1.0</specular>
+      <direction>0.4 -0.3 -0.7</direction>
+    </light>
+
+    <!-- ================================================================== -->
+    <!-- GROUND PLANE                                                       -->
+    <!-- Large ground plane with realistic grass-like material              -->
+    <!-- ================================================================== -->
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="ground_link">
+        <collision name="ground_collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>500 500</size>
+            </plane>
+          </geometry>
+          <surface>
+            <friction>
+              <ode>
+                <mu>100</mu>
+                <mu2>50</mu2>
+              </ode>
+            </friction>
+            <bounce>
+              <restitution_coefficient>0.0</restitution_coefficient>
+              <threshold>1e+06</threshold>
+            </bounce>
+          </surface>
+        </collision>
+        <visual name="ground_visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>500 500</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.25 0.38 0.15 1.0</ambient>
+            <diffuse>0.3 0.45 0.18 1.0</diffuse>
+            <specular>0.02 0.02 0.02 1.0</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================================================================== -->
+    <!-- LANDING PAD A — Primary takeoff/landing zone at origin             -->
+    <!-- 3m x 3m concrete pad with "H" visual reference                    -->
+    <!-- ================================================================== -->
+    <model name="landing_pad_A">
+      <static>true</static>
+      <pose>0 0 0.01 0 0 0</pose>
+      <link name="pad_link">
+        <collision name="pad_collision">
+          <geometry>
+            <box><size>3.0 3.0 0.02</size></box>
+          </geometry>
+        </collision>
+        <visual name="pad_visual">
+          <geometry>
+            <box><size>3.0 3.0 0.02</size></box>
+          </geometry>
+          <material>
+            <ambient>0.55 0.55 0.55 1.0</ambient>
+            <diffuse>0.6 0.6 0.6 1.0</diffuse>
+            <specular>0.1 0.1 0.1 1.0</specular>
+          </material>
+        </visual>
+        <!-- Helipad "H" left bar -->
+        <visual name="h_left">
+          <pose>-0.4 0 0.011 0 0 0</pose>
+          <geometry>
+            <box><size>0.12 1.0 0.005</size></box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.9 0.0 1.0</ambient>
+            <diffuse>1.0 1.0 0.0 1.0</diffuse>
+          </material>
+        </visual>
+        <!-- Helipad "H" right bar -->
+        <visual name="h_right">
+          <pose>0.4 0 0.011 0 0 0</pose>
+          <geometry>
+            <box><size>0.12 1.0 0.005</size></box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.9 0.0 1.0</ambient>
+            <diffuse>1.0 1.0 0.0 1.0</diffuse>
+          </material>
+        </visual>
+        <!-- Helipad "H" crossbar -->
+        <visual name="h_cross">
+          <pose>0 0 0.011 0 0 0</pose>
+          <geometry>
+            <box><size>0.68 0.12 0.005</size></box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.9 0.0 1.0</ambient>
+            <diffuse>1.0 1.0 0.0 1.0</diffuse>
+          </material>
+        </visual>
+        <!-- Helipad circle -->
+        <visual name="h_circle">
+          <pose>0 0 0.0105 0 0 0</pose>
+          <geometry>
+            <cylinder>
+              <radius>1.2</radius>
+              <length>0.002</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.9 0.9 0.0 1.0</ambient>
+            <diffuse>1.0 1.0 0.0 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================================================================== -->
+    <!-- LANDING PAD B — Secondary pad for multi-drone or waypoint missions -->
+    <!-- ================================================================== -->
+    <model name="landing_pad_B">
+      <static>true</static>
+      <pose>40 -20 0.01 0 0 0.7854</pose>
+      <link name="pad_link">
+        <collision name="pad_collision">
+          <geometry>
+            <box><size>3.0 3.0 0.02</size></box>
+          </geometry>
+        </collision>
+        <visual name="pad_visual">
+          <geometry>
+            <box><size>3.0 3.0 0.02</size></box>
+          </geometry>
+          <material>
+            <ambient>0.55 0.55 0.55 1.0</ambient>
+            <diffuse>0.6 0.6 0.6 1.0</diffuse>
+            <specular>0.1 0.1 0.1 1.0</specular>
+          </material>
+        </visual>
+        <visual name="pad_marker">
+          <pose>0 0 0.011 0 0 0</pose>
+          <geometry>
+            <cylinder>
+              <radius>1.0</radius>
+              <length>0.002</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.0 0.5 0.9 1.0</ambient>
+            <diffuse>0.0 0.6 1.0 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================================================================== -->
+    <!-- BUILDINGS — Obstacle-rich urban-like environment for avoidance     -->
+    <!-- ================================================================== -->
+
+    <!-- Building 1: Tall office tower -->
+    <model name="building_tower">
+      <static>true</static>
+      <pose>25 15 10 0 0 0.15</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>8 12 20</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>8 12 20</size></box>
+          </geometry>
+          <material>
+            <ambient>0.45 0.42 0.40 1.0</ambient>
+            <diffuse>0.55 0.52 0.50 1.0</diffuse>
+            <specular>0.2 0.2 0.2 1.0</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Building 2: Low warehouse -->
+    <model name="building_warehouse">
+      <static>true</static>
+      <pose>-20 30 3 0 0 -0.3</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>20 15 6</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>20 15 6</size></box>
+          </geometry>
+          <material>
+            <ambient>0.5 0.35 0.25 1.0</ambient>
+            <diffuse>0.6 0.42 0.30 1.0</diffuse>
+            <specular>0.05 0.05 0.05 1.0</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Building 3: Residential block -->
+    <model name="building_residential">
+      <static>true</static>
+      <pose>-15 -25 5 0 0 0.5</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>10 10 10</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>10 10 10</size></box>
+          </geometry>
+          <material>
+            <ambient>0.65 0.55 0.45 1.0</ambient>
+            <diffuse>0.75 0.65 0.55 1.0</diffuse>
+            <specular>0.08 0.08 0.08 1.0</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Building 4: Small shed/structure -->
+    <model name="building_shed">
+      <static>true</static>
+      <pose>35 -10 1.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>5 4 3</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>5 4 3</size></box>
+          </geometry>
+          <material>
+            <ambient>0.35 0.30 0.30 1.0</ambient>
+            <diffuse>0.45 0.40 0.40 1.0</diffuse>
+            <specular>0.05 0.05 0.05 1.0</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Building 5: Tall thin communication tower -->
+    <model name="comm_tower">
+      <static>true</static>
+      <pose>-35 -5 15 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>1.5 1.5 30</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>1.5 1.5 30</size></box>
+          </geometry>
+          <material>
+            <ambient>0.4 0.4 0.45 1.0</ambient>
+            <diffuse>0.5 0.5 0.55 1.0</diffuse>
+            <specular>0.3 0.3 0.3 1.0</specular>
+          </material>
+        </visual>
+        <!-- Antenna dish -->
+        <visual name="antenna">
+          <pose>0.9 0 10 0 0 0</pose>
+          <geometry>
+            <cylinder>
+              <radius>0.8</radius>
+              <length>0.15</length>
+            </cylinder>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1.0</ambient>
+            <diffuse>0.9 0.9 0.9 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================================================================== -->
+    <!-- TREES — Cylindrical/sphere approximations as LiDAR obstacles      -->
+    <!-- ================================================================== -->
+    <model name="tree_1">
+      <static>true</static>
+      <pose>10 -8 0 0 0 0</pose>
+      <link name="link">
+        <!-- Trunk -->
+        <visual name="trunk">
+          <pose>0 0 2.5 0 0 0</pose>
+          <geometry>
+            <cylinder><radius>0.15</radius><length>5.0</length></cylinder>
+          </geometry>
+          <material>
+            <ambient>0.35 0.22 0.10 1.0</ambient>
+            <diffuse>0.45 0.28 0.12 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="trunk_col">
+          <pose>0 0 2.5 0 0 0</pose>
+          <geometry>
+            <cylinder><radius>0.15</radius><length>5.0</length></cylinder>
+          </geometry>
+        </collision>
+        <!-- Canopy -->
+        <visual name="canopy">
+          <pose>0 0 5.5 0 0 0</pose>
+          <geometry>
+            <sphere><radius>2.0</radius></sphere>
+          </geometry>
+          <material>
+            <ambient>0.12 0.35 0.10 1.0</ambient>
+            <diffuse>0.15 0.45 0.12 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="canopy_col">
+          <pose>0 0 5.5 0 0 0</pose>
+          <geometry>
+            <sphere><radius>2.0</radius></sphere>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+
+    <model name="tree_2">
+      <static>true</static>
+      <pose>-8 12 0 0 0 0</pose>
+      <link name="link">
+        <visual name="trunk">
+          <pose>0 0 3.0 0 0 0</pose>
+          <geometry>
+            <cylinder><radius>0.2</radius><length>6.0</length></cylinder>
+          </geometry>
+          <material>
+            <ambient>0.30 0.20 0.08 1.0</ambient>
+            <diffuse>0.40 0.25 0.10 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="trunk_col">
+          <pose>0 0 3.0 0 0 0</pose>
+          <geometry>
+            <cylinder><radius>0.2</radius><length>6.0</length></cylinder>
+          </geometry>
+        </collision>
+        <visual name="canopy">
+          <pose>0 0 7.0 0 0 0</pose>
+          <geometry>
+            <sphere><radius>2.5</radius></sphere>
+          </geometry>
+          <material>
+            <ambient>0.10 0.30 0.08 1.0</ambient>
+            <diffuse>0.12 0.40 0.10 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="canopy_col">
+          <pose>0 0 7.0 0 0 0</pose>
+          <geometry>
+            <sphere><radius>2.5</radius></sphere>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+
+    <model name="tree_3">
+      <static>true</static>
+      <pose>18 5 0 0 0 0</pose>
+      <link name="link">
+        <visual name="trunk">
+          <pose>0 0 2.0 0 0 0</pose>
+          <geometry>
+            <cylinder><radius>0.12</radius><length>4.0</length></cylinder>
+          </geometry>
+          <material>
+            <ambient>0.32 0.20 0.09 1.0</ambient>
+            <diffuse>0.42 0.26 0.11 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="trunk_col">
+          <pose>0 0 2.0 0 0 0</pose>
+          <geometry>
+            <cylinder><radius>0.12</radius><length>4.0</length></cylinder>
+          </geometry>
+        </collision>
+        <visual name="canopy">
+          <pose>0 0 4.8 0 0 0</pose>
+          <geometry>
+            <sphere><radius>1.8</radius></sphere>
+          </geometry>
+          <material>
+            <ambient>0.15 0.38 0.12 1.0</ambient>
+            <diffuse>0.18 0.48 0.15 1.0</diffuse>
+          </material>
+        </visual>
+        <collision name="canopy_col">
+          <pose>0 0 4.8 0 0 0</pose>
+          <geometry>
+            <sphere><radius>1.8</radius></sphere>
+          </geometry>
+        </collision>
+      </link>
+    </model>
+
+    <!-- ================================================================== -->
+    <!-- ELEVATED TERRAIN FEATURES — Hills / berms for elevation changes   -->
+    <!-- ================================================================== -->
+
+    <!-- Hill 1: Gentle mound -->
+    <model name="hill_1">
+      <static>true</static>
+      <pose>50 40 0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <sphere><radius>12</radius></sphere>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <sphere><radius>12</radius></sphere>
+          </geometry>
+          <material>
+            <ambient>0.28 0.40 0.18 1.0</ambient>
+            <diffuse>0.32 0.48 0.22 1.0</diffuse>
+            <specular>0.01 0.01 0.01 1.0</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Hill 2: Smaller mound near flight path -->
+    <model name="hill_2">
+      <static>true</static>
+      <pose>-30 45 0 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <sphere><radius>8</radius></sphere>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <sphere><radius>8</radius></sphere>
+          </geometry>
+          <material>
+            <ambient>0.25 0.36 0.15 1.0</ambient>
+            <diffuse>0.30 0.44 0.20 1.0</diffuse>
+            <specular>0.01 0.01 0.01 1.0</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================================================================== -->
+    <!-- WALLS / BARRIERS — Simulate fences, perimeter walls               -->
+    <!-- ================================================================== -->
+
+    <!-- Perimeter wall — North -->
+    <model name="wall_north">
+      <static>true</static>
+      <pose>0 60 1 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>120 0.3 2</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>120 0.3 2</size></box>
+          </geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1.0</ambient>
+            <diffuse>0.6 0.6 0.6 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Perimeter wall — South -->
+    <model name="wall_south">
+      <static>true</static>
+      <pose>0 -60 1 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>120 0.3 2</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>120 0.3 2</size></box>
+          </geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1.0</ambient>
+            <diffuse>0.6 0.6 0.6 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Perimeter wall — East -->
+    <model name="wall_east">
+      <static>true</static>
+      <pose>60 0 1 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>0.3 120 2</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>0.3 120 2</size></box>
+          </geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1.0</ambient>
+            <diffuse>0.6 0.6 0.6 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Perimeter wall — West -->
+    <model name="wall_west">
+      <static>true</static>
+      <pose>-60 0 1 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>0.3 120 2</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>0.3 120 2</size></box>
+          </geometry>
+          <material>
+            <ambient>0.5 0.5 0.5 1.0</ambient>
+            <diffuse>0.6 0.6 0.6 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================================================================== -->
+    <!-- POWER LINES — Thin elevated obstacles for precision avoidance     -->
+    <!-- ================================================================== -->
+
+    <!-- Power line pole 1 -->
+    <model name="power_pole_1">
+      <static>true</static>
+      <pose>-10 -40 5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <cylinder><radius>0.15</radius><length>10</length></cylinder>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <cylinder><radius>0.15</radius><length>10</length></cylinder>
+          </geometry>
+          <material>
+            <ambient>0.3 0.25 0.2 1.0</ambient>
+            <diffuse>0.4 0.32 0.25 1.0</diffuse>
+          </material>
+        </visual>
+        <!-- Cross arm -->
+        <visual name="cross_arm">
+          <pose>0 0 4.5 0 0 0</pose>
+          <geometry>
+            <box><size>4 0.1 0.1</size></box>
+          </geometry>
+          <material>
+            <ambient>0.3 0.25 0.2 1.0</ambient>
+            <diffuse>0.4 0.32 0.25 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Power line pole 2 -->
+    <model name="power_pole_2">
+      <static>true</static>
+      <pose>30 -40 5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <cylinder><radius>0.15</radius><length>10</length></cylinder>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <cylinder><radius>0.15</radius><length>10</length></cylinder>
+          </geometry>
+          <material>
+            <ambient>0.3 0.25 0.2 1.0</ambient>
+            <diffuse>0.4 0.32 0.25 1.0</diffuse>
+          </material>
+        </visual>
+        <visual name="cross_arm">
+          <pose>0 0 4.5 0 0 0</pose>
+          <geometry>
+            <box><size>4 0.1 0.1</size></box>
+          </geometry>
+          <material>
+            <ambient>0.3 0.25 0.2 1.0</ambient>
+            <diffuse>0.4 0.32 0.25 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Power line cable (thin box between poles) -->
+    <model name="power_cable">
+      <static>true</static>
+      <pose>10 -40 9.5 0 0 0</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>40.0 0.02 0.02</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>40.0 0.02 0.02</size></box>
+          </geometry>
+          <material>
+            <ambient>0.1 0.1 0.1 1.0</ambient>
+            <diffuse>0.15 0.15 0.15 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================================================================== -->
+    <!-- DYNAMIC OBSTACLES — Boxes at various heights for YOLO / avoidance -->
+    <!-- ================================================================== -->
+
+    <!-- Elevated platform (rooftop-like) -->
+    <model name="elevated_platform">
+      <static>true</static>
+      <pose>-25 -15 4 0 0 0.2</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>6 6 0.3</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>6 6 0.3</size></box>
+          </geometry>
+          <material>
+            <ambient>0.45 0.45 0.45 1.0</ambient>
+            <diffuse>0.55 0.55 0.55 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Cargo container 1 -->
+    <model name="cargo_container_1">
+      <static>true</static>
+      <pose>15 25 1.3 0 0 0.8</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>6.1 2.44 2.59</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>6.1 2.44 2.59</size></box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.15 0.10 1.0</ambient>
+            <diffuse>0.75 0.2 0.12 1.0</diffuse>
+            <specular>0.15 0.15 0.15 1.0</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Cargo container 2 (stacked) -->
+    <model name="cargo_container_2">
+      <static>true</static>
+      <pose>15 28 3.89 0 0 0.8</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>6.1 2.44 2.59</size></box>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <box><size>6.1 2.44 2.59</size></box>
+          </geometry>
+          <material>
+            <ambient>0.10 0.15 0.55 1.0</ambient>
+            <diffuse>0.12 0.20 0.70 1.0</diffuse>
+            <specular>0.15 0.15 0.15 1.0</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================================================================== -->
+    <!-- ROAD / RUNWAY — Visual reference for autonomous navigation        -->
+    <!-- ================================================================== -->
+    <model name="road_main">
+      <static>true</static>
+      <pose>0 0 0.005 0 0 0</pose>
+      <link name="link">
+        <visual name="road_surface">
+          <geometry>
+            <box><size>100 6 0.01</size></box>
+          </geometry>
+          <material>
+            <ambient>0.25 0.25 0.25 1.0</ambient>
+            <diffuse>0.3 0.3 0.3 1.0</diffuse>
+            <specular>0.05 0.05 0.05 1.0</specular>
+          </material>
+        </visual>
+        <!-- Center line dashes -->
+        <visual name="center_line_1">
+          <pose>-20 0 0.006 0 0 0</pose>
+          <geometry>
+            <box><size>3 0.15 0.002</size></box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.9 0.2 1.0</ambient>
+            <diffuse>1.0 1.0 0.3 1.0</diffuse>
+          </material>
+        </visual>
+        <visual name="center_line_2">
+          <pose>-10 0 0.006 0 0 0</pose>
+          <geometry>
+            <box><size>3 0.15 0.002</size></box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.9 0.2 1.0</ambient>
+            <diffuse>1.0 1.0 0.3 1.0</diffuse>
+          </material>
+        </visual>
+        <visual name="center_line_3">
+          <pose>0 0 0.006 0 0 0</pose>
+          <geometry>
+            <box><size>3 0.15 0.002</size></box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.9 0.2 1.0</ambient>
+            <diffuse>1.0 1.0 0.3 1.0</diffuse>
+          </material>
+        </visual>
+        <visual name="center_line_4">
+          <pose>10 0 0.006 0 0 0</pose>
+          <geometry>
+            <box><size>3 0.15 0.002</size></box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.9 0.2 1.0</ambient>
+            <diffuse>1.0 1.0 0.3 1.0</diffuse>
+          </material>
+        </visual>
+        <visual name="center_line_5">
+          <pose>20 0 0.006 0 0 0</pose>
+          <geometry>
+            <box><size>3 0.15 0.002</size></box>
+          </geometry>
+          <material>
+            <ambient>0.9 0.9 0.2 1.0</ambient>
+            <diffuse>1.0 1.0 0.3 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================================================================== -->
+    <!-- APRIL TAG / ARUCO MARKER STAND — For precision landing CV tests   -->
+    <!-- ================================================================== -->
+    <model name="marker_stand">
+      <static>true</static>
+      <pose>0 0 0.025 0 0 0</pose>
+      <link name="link">
+        <!-- Marker board (white square with dark border) -->
+        <visual name="marker_board">
+          <pose>0 0 0.001 0 0 0</pose>
+          <geometry>
+            <box><size>0.5 0.5 0.002</size></box>
+          </geometry>
+          <material>
+            <ambient>0.95 0.95 0.95 1.0</ambient>
+            <diffuse>1.0 1.0 1.0 1.0</diffuse>
+          </material>
+        </visual>
+        <!-- Inner dark pattern (simplified ArUco-like marker) -->
+        <visual name="marker_pattern">
+          <pose>0 0 0.003 0 0 0</pose>
+          <geometry>
+            <box><size>0.35 0.35 0.001</size></box>
+          </geometry>
+          <material>
+            <ambient>0.05 0.05 0.05 1.0</ambient>
+            <diffuse>0.08 0.08 0.08 1.0</diffuse>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================================================================== -->
+    <!-- VEHICLES ON GROUND — Static obstacles for YOLO detection testing  -->
+    <!-- ================================================================== -->
+
+    <!-- Parked car 1 -->
+    <model name="car_1">
+      <static>true</static>
+      <pose>8 -3 0.75 0 0 1.57</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>4.5 1.8 1.5</size></box>
+          </geometry>
+        </collision>
+        <visual name="body">
+          <geometry>
+            <box><size>4.5 1.8 1.5</size></box>
+          </geometry>
+          <material>
+            <ambient>0.1 0.1 0.6 1.0</ambient>
+            <diffuse>0.15 0.15 0.75 1.0</diffuse>
+            <specular>0.3 0.3 0.3 1.0</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- Parked car 2 -->
+    <model name="car_2">
+      <static>true</static>
+      <pose>-6 -3 0.75 0 0 1.57</pose>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <box><size>4.5 1.8 1.5</size></box>
+          </geometry>
+        </collision>
+        <visual name="body">
+          <geometry>
+            <box><size>4.5 1.8 1.5</size></box>
+          </geometry>
+          <material>
+            <ambient>0.6 0.1 0.1 1.0</ambient>
+            <diffuse>0.75 0.12 0.12 1.0</diffuse>
+            <specular>0.3 0.3 0.3 1.0</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+
+    <!-- ================================================================== -->
+    <!-- FUEL MODELS (from Gazebo Fuel — uncomment if network available)   -->
+    <!-- These pull high-quality meshes from the Fuel model repository     -->
+    <!-- ================================================================== -->
+    <!--
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Oak tree</uri>
+      <pose>20 20 0 0 0 0</pose>
+    </include>
+
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Construction Cone</uri>
+      <pose>5 5 0 0 0 0</pose>
+    </include>
+
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Pickup</uri>
+      <pose>-12 8 0 0 0 0.3</pose>
+    </include>
+
+    <include>
+      <uri>https://fuel.gazebosim.org/1.0/OpenRobotics/models/Fire Hydrant</uri>
+      <pose>3 -6 0 0 0 0</pose>
+    </include>
+    -->
+
+  </world>
+</sdf>
