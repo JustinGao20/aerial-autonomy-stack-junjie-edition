@@ -17,7 +17,7 @@ from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
 
 
-CONF_THRESH = 0.5
+CONF_THRESH = 0.2
 
 class YoloInferenceNode(Node):
     def __init__(self, headless, hitl, hfov, vfov):
@@ -38,8 +38,8 @@ class YoloInferenceNode(Node):
         # Load model and runtime
         # Options, from fastest to most accurate, <10MB to >100MB: yolo26n, yolo26s, yolo26m, yolo26l, yolo26x, export in Dockerfile.aircraft
         if self.architecture == 'x86_64':
-            model_path = "/aas/yolo/yolo26n_320.onnx" # Simulated camera in sensor_camera/model.sdf is 320x240
-            self.input_size = 320 # YOLO input size
+            model_path = "/aas/yolo/yolo26n_640.onnx" # Simulated camera in sensor_camera/model.sdf is 320x240
+            self.input_size = 640 # YOLO input size
             preferred_providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
             self.get_logger().info("Trying ONNX Runtime providers for AMD64: CUDA -> CPU fallback")
             self.session = self.create_ort_session(model_path, preferred_providers)
@@ -262,14 +262,16 @@ class YoloInferenceNode(Node):
 
         # Filter by confidence threshold
         mask = confidences > CONF_THRESH
-
-        if not mask.any():
-            return np.array([]), np.array([]), np.array([])
-
-        # Apply mask
         boxes = boxes[mask]
         confidences = confidences[mask]
         class_ids = class_ids[mask]
+
+        self.get_logger().info(
+            f"Detections: {len(boxes)}, avg conf: {np.mean(confidences) if len(confidences)>0 else 0}"
+        )
+
+        if len(boxes) == 0:
+            return np.array([]), np.array([]), np.array([])
 
         # Convert [x1, y1, x2, y2] to [cx, cy, w, h]
         w = boxes[:, 2] - boxes[:, 0]
