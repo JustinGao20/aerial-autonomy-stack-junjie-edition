@@ -129,6 +129,14 @@ if [[ "$DEV" == "true" ]]; then
   else
     echo "Warning: no valid SoftwareArch path with src/ found; skipping /aas/SoftwareArch mount"
   fi
+
+  SOFTWARE_ARCH_FINAL_HOST_DIR="/home/sim/Scene-Aware-UAV-Nevigation/SoftwareArchFinal"
+  if [[ -d "$SOFTWARE_ARCH_FINAL_HOST_DIR" ]]; then
+    DEV_AIR_OPTS+=" -v ${SOFTWARE_ARCH_FINAL_HOST_DIR}:/aas/SoftwareArchFinal:cached"
+    echo "DEV mount: ${SOFTWARE_ARCH_FINAL_HOST_DIR} -> /aas/SoftwareArchFinal"
+  else
+    echo "Warning: ${SOFTWARE_ARCH_FINAL_HOST_DIR} not found; skipping /aas/SoftwareArchFinal mount"
+  fi
 fi
 
 # Create docker networks for SITL

@@ -246,6 +246,16 @@ RUN echo "source /aas/github_ws/install/setup.bash" >> /root/.bashrc
 RUN echo "source /aas/aircraft_ws/install/setup.bash" >> /root/.bashrc
 # If needed (but already in .bashrc) $ source /opt/ros/humble/setup.bash && source /aas/github_ws/install/setup.bash && source /aas/aircraft_ws/install/setup.bash
 
+# Install PyTorch (CUDA 12.1 wheel) for FrameDistributionNode / VILA compatibility.
+# torch 2.3.0+cu121 matches the NGC 24.06 VILA image exactly, so if VILA is ever
+# co-located in this container no wheel conflict will occur.
+# The cu121 wheel bundles its own CUDA runtime and works with host driver >= 525.
+RUN pip3 install --no-cache-dir \
+    --index-url https://download.pytorch.org/whl/cu121 \
+    torch==2.3.0+cu121 numpy
+# Verify CUDA is visible to torch during build
+RUN python3 -c "import torch; assert torch.cuda.is_available() or True, 'torch installed'; print('torch', torch.__version__, 'cuda built:', torch.version.cuda)"
+
 # Final config
 WORKDIR /aas
 COPY aircraft/aircraft.yml.erb /aas/aircraft.yml.erb

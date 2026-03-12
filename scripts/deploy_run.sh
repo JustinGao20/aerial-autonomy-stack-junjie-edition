@@ -24,6 +24,15 @@ GND_CONTAINER="${GND_CONTAINER:-true}" # Options: true (default), false
 NUM_QUADS="${NUM_QUADS:-1}" # Number of quadcopters (default = 1)
 NUM_VTOLS="${NUM_VTOLS:-0}" # Number of VTOLs (default = 0)
 
+# Optional explicit mount for external workspace used by custom nodes.
+SOFTWARE_ARCH_FINAL_HOST_DIR="/home/sim/Scene-Aware-UAV-Nevigation/SoftwareArchFinal"
+SOFTWARE_ARCH_FINAL_MOUNT=""
+if [[ -d "$SOFTWARE_ARCH_FINAL_HOST_DIR" ]]; then
+  SOFTWARE_ARCH_FINAL_MOUNT="-v ${SOFTWARE_ARCH_FINAL_HOST_DIR}:/home/sim/Scene-Aware-UAV-Nevigation/SoftwareArchFinal:cached"
+else
+  echo "Warning: ${SOFTWARE_ARCH_FINAL_HOST_DIR} not found; skipping explicit SoftwareArchFinal mount"
+fi
+
 GROUND="${GROUND:-false}" # Options: true, false (default)
 if [[ "$GROUND" == "true" ]]; then
   # This is a bit hacky, but allows to use the deploy_run.sh script for the ground container
@@ -41,6 +50,7 @@ if [[ "$GROUND" == "true" ]]; then
     --net=host \
     --privileged \
     --name ground-container \
+    ${SOFTWARE_ARCH_FINAL_MOUNT} \
     ground-image
   exit 0
 fi
@@ -89,6 +99,7 @@ docker run $DOCKER_RUN_FLAGS \
   --net=host \
   --privileged \
   --name aircraft-container_$DRONE_ID \
+  ${SOFTWARE_ARCH_FINAL_MOUNT} \
   ${DEV_OPTS} \
   aircraft-image
 
