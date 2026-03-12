@@ -22,6 +22,10 @@ DEV="${DEV:-false}" # Options: true, false (default)
 DEV_SHELL_ENTRYPOINT="${DEV_SHELL_ENTRYPOINT:-false}" # Options: true, false (default). true => override entrypoint with /bin/bash
 HITL="${HITL:-false}" # Options: true, false (default)
 GND_CONTAINER="${GND_CONTAINER:-true}" # Options: true (default), false
+# HuggingFace model cache options for VILA in aircraft container.
+HF_CACHE_DIR="${HF_CACHE_DIR:-$HOME/.cache/huggingface-aas}"
+VILA_MODEL_ID="${VILA_MODEL_ID:-Efficient-Large-Model/VILA1.5-3b}"
+VILA_PREFETCH="${VILA_PREFETCH:-false}" # true => pre-download model before launching aircraft containers
 RTF="${RTF:-1.0}" # Real-time factor (default = 1.0), set to <=0.0 for as fast as possible execution
 START_AS_PAUSED="${START_AS_PAUSED:-false}" # Options: true, false (default)
 INSTANCE="${INSTANCE:-0}" # Integer ID to make docker network/container names unique as well as offsetting the second byte of the subnets (default = 0)
@@ -137,6 +141,23 @@ if [[ "$DEV" == "true" ]]; then
   else
     echo "Warning: ${SOFTWARE_ARCH_FINAL_HOST_DIR} not found; skipping /aas/SoftwareArchFinal mount"
   fi
+fi
+
+# Prepare persistent HuggingFace cache mount used by aircraft containers.
+mkdir -p "$HF_CACHE_DIR"
+HF_CACHE_OPTS="-v ${HF_CACHE_DIR}:/root/.cache/huggingface:rw --env HF_HOME=/root/.cache/huggingface --env TRANSFORMERS_CACHE=/root/.cache/huggingface/hub"
+
+# Optional model prefetch before aircraft containers start.
+if [[ "$VILA_PREFETCH" == "true" ]]; then
+  echo "Prefetch enabled: downloading ${VILA_MODEL_ID} into ${HF_CACHE_DIR}"
+  docker run --rm \
+    ${HF_CACHE_OPTS} \
+    aircraft-image \
+    python3 - <<PY
+from huggingface_hub import snapshot_download
+snapshot_download(repo_id="${VILA_MODEL_ID}")
+print("Prefetch complete: ${VILA_MODEL_ID}")
+PY
 fi
 
 # Create docker networks for SITL
@@ -274,6 +295,7 @@ if [[ "$HITL" == "false" ]]; then
       docker rm -f "$NAME_AIRCRAFT_CNT" >/dev/null 2>&1 || true
       DOCKER_CMD="docker run $DOCKER_RUN_FLAGS \
         $X11_DOCKER_OPTS --gpus all \
+        $HF_CACHE_OPTS \
         --env NVIDIA_DRIVER_CAPABILITIES=all --env GST_DEBUG=3 \
         --env __NV_PRIME_RENDER_OFFLOAD=1 --env __GLX_VENDOR_LIBRARY_NAME=nvidia \
         --env AUTOPILOT=$AUTOPILOT --env HEADLESS=$HEADLESS --env CAMERA=$CAMERA --env LIDAR=$LIDAR \

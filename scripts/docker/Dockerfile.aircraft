@@ -252,9 +252,217 @@ RUN echo "source /aas/aircraft_ws/install/setup.bash" >> /root/.bashrc
 # The cu121 wheel bundles its own CUDA runtime and works with host driver >= 525.
 RUN pip3 install --no-cache-dir \
     --index-url https://download.pytorch.org/whl/cu121 \
-    torch==2.3.0+cu121 numpy
+    torch==2.3.0+cu121 \
+    torchvision==0.18.0+cu121 \
+    numpy==1.26.4
 # Verify CUDA is visible to torch during build
 RUN python3 -c "import torch; assert torch.cuda.is_available() or True, 'torch installed'; print('torch', torch.__version__, 'cuda built:', torch.version.cuda)"
+
+# Install minimal VILA runtime stack in aircraft image so VLMReasoningNode can
+# use llava vision_tower + mm_projector path (not placeholder mode).
+WORKDIR /opt
+RUN rm -rf /opt/vila && git clone --depth 1 https://github.com/Efficient-Large-Model/VILA.git /opt/vila
+
+RUN pip3 install --no-cache-dir --upgrade pip setuptools wheel pillow \
+    && pip3 install --no-cache-dir --resume-retries 5 \
+        transformers==4.46.0 \
+        tokenizers==0.20.3 \
+        bitsandbytes==0.43.2 \
+        accelerate==0.34.2 \
+        sentencepiece \
+        timm==0.9.12 \
+        einops \
+        loguru \
+        pydantic \
+        hydra-core \
+        psutil \
+        requests
+
+# Install llava package from official VILA repo without dependency solving.
+# VILA's optional ps3-torch dependency pins timm==1.0.15, which conflicts with
+# VILA 2.0.0's timm==0.9.12 requirement. We only need llava runtime path here.
+RUN pip3 install --no-cache-dir --no-deps -e /opt/vila
+
+# Runtime-only aircraft images do not include flash_attn, so force SigLIP to use
+# PyTorch SDPA during model load.
+RUN python3 - <<'PY'
+from pathlib import Path
+
+path = Path('/opt/vila/llava/model/multimodal_encoder/siglip_encoder.py')
+text = path.read_text()
+text = text.replace('flash_attention_2', 'sdpa')
+path.write_text(text)
+PY
+
+# Keep the same compatibility fixes used by the validated nano_llm_pc image.
+RUN python3 - <<'PY'
+from pathlib import Path
+
+path = Path('/opt/vila/llava/model/multimodal_encoder/builder.py')
+text = path.read_text()
+
+text = text.replace(
+    'from .ps3_encoder import PS3VisionTower\n',
+    'try:\n    from .ps3_encoder import PS3VisionTower\nexcept Exception:\n    PS3VisionTower = None\n'
+)
+
+text = text.replace(
+    '    if config.ps3:\n        vision_tower = PS3VisionTower(model_name_or_path, config)\n',
+    '    if getattr(config, "ps3", False):\n        if PS3VisionTower is None:\n            raise ImportError("PS3 vision tower requested but ps3 dependencies are not installed")\n        vision_tower = PS3VisionTower(model_name_or_path, config)\n'
+)
+
+text = text.replace(
+    '    if config.ps3:\n        config.mm_low_res_token_num = vision_tower.vision_tower.vision_model.low_res_token_num\n        config.mm_scale_num = len(vision_tower.vision_tower.vision_model.s3_scales)\n',
+    '    if getattr(config, "ps3", False):\n        config.mm_low_res_token_num = vision_tower.vision_tower.vision_model.low_res_token_num\n        config.mm_scale_num = len(vision_tower.vision_tower.vision_model.s3_scales)\n'
+)
+
+path.write_text(text)
+PY
+
+RUN python3 - <<'PY'
+from pathlib import Path
+
+path = Path('/opt/vila/llava/model/llava_arch.py')
+text = path.read_text()
+
+text = text.replace(
+    'from llava.train.sequence_parallel import get_pg_manager\n',
+    'try:\n    from llava.train.sequence_parallel import get_pg_manager\nexcept Exception:\n    def get_pg_manager():\n        return None\n'
+)
+
+needle = '        if not hasattr(config, "model_dtype"):\n            warnings.warn("model_dtype not found in config, defaulting to torch.float16.")\n            config.model_dtype = model_dtype\n\n'
+inject = (
+    '        if not hasattr(config, "model_dtype"):\n'
+    '            warnings.warn("model_dtype not found in config, defaulting to torch.float16.")\n'
+    '            config.model_dtype = model_dtype\n'
+    '        if not hasattr(config, "image_encoder"):\n'
+    '            config.image_encoder = "{\\"_target_\\": \\\"llava.model.encoders.BasicImageEncoder\\\"}"\n'
+    '        if not hasattr(config, "video_encoder"):\n'
+    '            config.video_encoder = "{\\"_target_\\": \\\"llava.model.encoders.BasicVideoEncoder\\\"}"\n\n'
+)
+
+text = text.replace(needle, inject)
+path.write_text(text)
+PY
+
+RUN python3 - <<'PY'
+from pathlib import Path
+
+for file_path in [
+    Path('/opt/vila/llava/model/language_model/llava_llama.py'),
+    Path('/opt/vila/llava/model/language_model/llava_topdown_llama.py'),
+]:
+    text = file_path.read_text()
+    text = text.replace(
+        'from llava.train.sequence_parallel.globals import get_pg_manager\n',
+        'try:\n    from llava.train.sequence_parallel.globals import get_pg_manager\nexcept Exception:\n    def get_pg_manager():\n        return None\n'
+    )
+    file_path.write_text(text)
+PY
+
+RUN python3 - <<'PY'
+from pathlib import Path
+
+path = Path('/opt/vila/llava/train/sequence_parallel/globals.py')
+text = path.read_text()
+
+text = text.replace(
+    'import deepspeed.comm as dist\n',
+    'try:\n    import deepspeed.comm as dist\nexcept Exception:\n    dist = None\n'
+)
+
+path.write_text(text)
+PY
+
+RUN python3 - <<'PY'
+from pathlib import Path
+
+path = Path('/opt/vila/llava/model/llava_arch.py')
+text = path.read_text()
+
+text = text.replace(
+    'from transformers.modeling_utils import ContextManagers, no_init_weights\n',
+    'from transformers.modeling_utils import ContextManagers\ntry:\n    from transformers.modeling_utils import no_init_weights\nexcept ImportError:\n    from contextlib import nullcontext as no_init_weights\n'
+)
+
+path.write_text(text)
+PY
+
+RUN python3 - <<'PY'
+from pathlib import Path
+
+path = Path('/opt/vila/llava/model/multimodal_encoder/vision_encoder.py')
+text = path.read_text()
+
+text = text.replace(
+    'from s2wrapper import forward as multiscale_forward\n',
+    'try:\n    from s2wrapper import forward as multiscale_forward\nexcept ImportError:\n    multiscale_forward = None\n'
+)
+
+path.write_text(text)
+PY
+
+RUN python3 - <<'PY'
+from pathlib import Path
+
+path = Path('/opt/vila/llava/model/multimodal_encoder/intern/modeling_intern_vit.py')
+text = path.read_text()
+
+# Make FlashAttention import optional
+text = text.replace(
+    'from .flash_attention import FlashAttention\n',
+    'try:\n    from .flash_attention import FlashAttention\nexcept (ImportError, Exception):\n    FlashAttention = None\n'
+)
+
+path.write_text(text)
+PY
+
+RUN python3 - <<'PY'
+from pathlib import Path
+
+# Make radio_encoder optional in builder.py (which imports image_processor)
+path = Path('/opt/vila/llava/model/multimodal_encoder/builder.py')
+text = path.read_text()
+
+text = text.replace(
+    'from .radio_encoder import RADIOVisionTower\n',
+    'try:\n    from .radio_encoder import RADIOVisionTower\nexcept (ImportError, Exception):\n    RADIOVisionTower = None\n'
+)
+
+path.write_text(text)
+PY
+
+RUN python3 - <<'PY'
+from pathlib import Path
+
+# Make fp8linearqwen2 optional in main __init__.py
+path = Path('/opt/vila/llava/model/__init__.py')
+text = path.read_text()
+
+text = text.replace(
+    'from .language_model.fp8linearqwen2 import FP8LinearQwen2Config, FP8LinearQwen2Model\n',
+    'try:\n    from .language_model.fp8linearqwen2 import FP8LinearQwen2Config, FP8LinearQwen2Model\nexcept (ImportError, Exception):\n    FP8LinearQwen2Config = None\n    FP8LinearQwen2Model = None\n'
+)
+
+path.write_text(text)
+PY
+
+RUN python3 - <<'PY'
+from pathlib import Path
+
+# Patch no_init_weights in qllava_qllama.py
+path = Path('/opt/vila/llava/model/language_model/qllava_qllama.py')
+text = path.read_text()
+
+text = text.replace(
+    'from transformers.modeling_utils import ContextManagers, no_init_weights\n',
+    'from transformers.modeling_utils import ContextManagers\ntry:\n    from transformers.modeling_utils import no_init_weights\nexcept ImportError:\n    from contextlib import nullcontext as no_init_weights\n'
+)
+
+path.write_text(text)
+PY
+
+RUN python3 -c "import llava, transformers, bitsandbytes; from llava.model import llava_arch; print('vila deps ok')"
 
 # Final config
 WORKDIR /aas
