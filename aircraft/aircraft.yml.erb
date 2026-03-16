@@ -3,6 +3,7 @@
   headless = ENV.fetch('HEADLESS', 'true') == 'true'
   camera = ENV.fetch('CAMERA', 'true') == 'true'
   lidar = ENV.fetch('LIDAR', 'true') == 'true'
+  legacy_yolo = ENV.fetch('LEGACY_YOLO', 'false') == 'true'
 
   sim_subnet = ENV.fetch('SIM_SUBNET', '10.42')
   air_subnet = ENV.fetch('AIR_SUBNET', '10.22')
@@ -49,7 +50,7 @@ windows:
   - perception:
       layout: even-horizontal
       panes:
-        <% if camera %>
+        <% if camera && legacy_yolo %>
         - ros2 run yolo_py yolo_py <%= headless ? '--headless' : '' %> <%= hitl ? '--hitl' : '' %> <%= simulated_time ? '--ros-args -p use_sim_time:=true' : '' %>
         <% end %>
         <% if lidar %>

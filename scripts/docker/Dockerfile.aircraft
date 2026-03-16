@@ -258,6 +258,16 @@ RUN pip3 install --no-cache-dir \
 # Verify CUDA is visible to torch during build
 RUN python3 -c "import torch; assert torch.cuda.is_available() or True, 'torch installed'; print('torch', torch.__version__, 'cuda built:', torch.version.cuda)"
 
+# Install ultralytics for YoloTrackerNode (system Python / ROS2 node).
+# ultralytics >= 8.4 pulls opencv-python >= 4.13 which requires numpy >= 2,
+# breaking cv_bridge.  Pinning to 8.3.x + opencv 4.8 keeps everything
+# compatible with numpy==1.26.4 (pinned above) and ROS cv_bridge.
+# The legacy AAS YOLO runs in /yolo-env/ (isolated venv) and is unaffected.
+RUN pip3 install --no-cache-dir \
+    "ultralytics==8.3.40" \
+    "opencv-python==4.8.0.76"
+RUN python3 -c "from ultralytics import YOLO; import ultralytics; print('ultralytics', ultralytics.__version__, 'ok')"
+
 # Install minimal VILA runtime stack in aircraft image so VLMReasoningNode can
 # use llava vision_tower + mm_projector path (not placeholder mode).
 WORKDIR /opt
