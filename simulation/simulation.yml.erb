@@ -72,8 +72,13 @@ windows:
     if autopilot == 'px4'
       autostart = is_quad ? 5140 : 5141
       model_name = is_quad ? "x500_#{sitl_instance}" : "standard_vtol_#{sitl_instance}"
-      x_offset = drone[:index] * 2
-      y_offset = is_quad ? x_offset : x_offset + 2
+      if world == 'user_created_world'
+        x_offset = drone[:index] * 2
+        y_offset = 0
+      else
+        x_offset = drone[:index] * 2
+        y_offset = is_quad ? x_offset : x_offset + 2
+      end
       sensor_path = ''
     elsif autopilot == 'ardupilot'
       vehicle_config = is_quad ? '-v ArduCopter -f gazebo-iris' : '-v ArduPlane'
